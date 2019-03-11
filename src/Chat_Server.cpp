@@ -27,10 +27,28 @@ int SendClientList(int sockclient){
     return 1;
 }
 
-void AddWaitList(Client_Info client_info){
+int AddWaitList(Client_Info client_info, int sockclient, int new_port){
+    // update port 
+    printf("Add waiting port for %s: %d\n", client_info.id, new_port);
+    client_info.port = new_port;
+    //add to wait list 
+    int find = 0;
     pthread_mutex_lock(&clist_lock);
-    client_list -> push_back(client_info);
+    for(vector<Client_Info>::iterator it = client_list->begin(); it != client_list->end(); it++){
+        if(it == client_list->end()){
+            break;
+        }
+		if(strcmp(it->id, client_info.id) == 0){
+            find = 1;
+            *it = client_info;
+            break;
+        }
+    }
+    if(find == 0){
+        client_list -> push_back(client_info);
+    }
     pthread_mutex_unlock(&clist_lock);
+    return 1;
 }
 
 int SendClientInfo(int sockclient, const char* connect_id){
@@ -65,7 +83,7 @@ int HandleClientRequest(int sockclient, Client_Info client_info){
         string connect_id;
         string strin(reques_buffer);
         if(strin[0] == '/'){ //is a command
-            if((spc_pos = strin.find(' ')) > 0){
+            if((spc_pos = strin.find(' ')) > 0){ //split
                 connect_id = strin.substr(spc_pos + 1, strin.size() - spc_pos - 1);
                 strin = strin.substr(0, spc_pos);
             }
@@ -79,10 +97,11 @@ int HandleClientRequest(int sockclient, Client_Info client_info){
             }else if(strin =="/wait"){
                 //wait function TODO
                 printf("%s>wait for connection\n", client_info.id);
-                AddWaitList(client_info);
+                int chat_port = atoi(connect_id.c_str());
+                AddWaitList(client_info, sockclient, chat_port);
             }else if(strin =="/connect"){
                 //connect function TODO * need id
-                printf("%s>connect to %s...\n", connect_id.c_str(), client_info.id);
+                printf("%s>connect to %s...\n", client_info.id, connect_id.c_str());
                 if(SendClientInfo(sockclient, connect_id.c_str()) < 0){
                     printf("send client info error: %s(errno: %d)\n", strerror(errno), errno);
                     break;
@@ -98,8 +117,6 @@ void *serverThread(void *arg){
     struct ThreadAttri *temp;
     temp = (struct ThreadAttri *)arg;
     int sockclient = temp->sockclient;
-    //setTimeout(sockclient, 20, 20);
-    string recvData, recvTemp;
 
     struct sockaddr_in Addclient;
     socklen_t addrlen = sizeof(struct sockaddr_in);

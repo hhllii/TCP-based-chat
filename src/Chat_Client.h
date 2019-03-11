@@ -11,3 +11,7 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include "simpleSocket.h"
+
+struct ThreadAttri{
+    int sockclient;
+};

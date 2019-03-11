@@ -12,13 +12,13 @@
 #include <netdb.h>
 #include <time.h>
 #include <sys/time.h>
+#include <unordered_map>
 #include "simpleSocket.h"
 
 using namespace std;
 
 struct ThreadAttri{
     int sockclient;
-
 };
 
 struct Client_Info
