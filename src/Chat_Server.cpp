@@ -53,6 +53,7 @@ int AddWaitList(Client_Info client_info, int sockclient, int new_port){
 
 int SendClientInfo(int sockclient, const char* connect_id){
     pthread_mutex_lock(&clist_lock);
+    int idx = 0;
     for(auto c : *client_list){
         if(strcmp(c.id, connect_id) == 0){
             char send_buffer[BUFFER_SIZE];
@@ -62,9 +63,11 @@ int SendClientInfo(int sockclient, const char* connect_id){
                 pthread_mutex_unlock(&clist_lock);
                 return -1;
             }
+            client_list->erase(client_list->begin() + idx);
             pthread_mutex_unlock(&clist_lock);
             return 1;
         }
+        idx++;
     }
     //no match id
     if(send(sockclient, "\n", 1, 0) < 0){

@@ -1,4 +1,11 @@
 #include "Chat_Client.h"
+int client_mode = 0; //INFO 0 WAIT 1 CHAT 2
+
+
+volatile sig_atomic_t flag = 0;
+static void my_handler(int sig){ // can be called asynchronously
+  flag = 1; // set flag
+}
 
 char my_id[MAX_ID_LEN];
 
@@ -187,16 +194,18 @@ void *recvThread(void *arg){
         printf("Recv id error: %s(errno: %d)",strerror(errno),errno);
         pthread_exit((void*)-1);
     }
+    printf("\nConnection from %s\n",chat_id);
 
     //recv msg
     while(recv(sockclient, recv_buffer, BUFFER_SIZE, 0) > 0){
-        printf("%s: %s\n",chat_id, recv_buffer);
+        printf("\n%s: %s\n",chat_id, recv_buffer);
     }
     pthread_exit((void*)1);
  }
 
 int main(int argc, char const *argv[]) 
 { 
+    // signal(SIGINT, my_handler);
     int sockserver = 0;
     struct sockaddr_in serv_addr; 
     char buffer[BUFFER_SIZE] = {0}; 
