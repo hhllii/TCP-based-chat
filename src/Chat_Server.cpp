@@ -79,9 +79,23 @@ int SendClientInfo(int sockclient, const char* connect_id){
     
 }
 
+void RemoveFromWait(const char* client_id){
+    pthread_mutex_lock(&clist_lock);
+    int idx = 0;
+    for(auto c : *client_list){
+        if(strcmp(c.id, client_id) == 0){
+            client_list->erase(client_list->begin() + idx);
+            pthread_mutex_unlock(&clist_lock);
+            return;
+        }
+        idx++;
+    }
+    pthread_mutex_unlock(&clist_lock);
+}
+
 int HandleClientRequest(int sockclient, Client_Info client_info){
     char reques_buffer[BUFFER_SIZE];
-    while(recv(sockclient, reques_buffer, MAX_ID_LEN, 0) > 0){
+    while(recv(sockclient, reques_buffer, BUFFER_SIZE, 0) > 0){
         int spc_pos = 0;
         string connect_id;
         string strin(reques_buffer);
@@ -109,6 +123,9 @@ int HandleClientRequest(int sockclient, Client_Info client_info){
                     printf("send client info error: %s(errno: %d)\n", strerror(errno), errno);
                     break;
                 }
+            }else if(strin =="/left"){
+                printf("%s>stop waiting\n", client_info.id);
+                RemoveFromWait(client_info.id);
             }
         }
     }

@@ -1,13 +1,26 @@
 #include "Chat_Client.h"
 int client_mode = 0; //INFO 0 WAIT 1 CHAT 2
+int chatsock = 0;
+int waitsock = 0;
+int serversock = 0;
 
+char my_id[MAX_ID_LEN];
+char guest_id[MAX_ID_LEN];
 
 volatile sig_atomic_t flag = 0;
 static void my_handler(int sig){ // can be called asynchronously
-  flag = 1; // set flag
+    if(client_mode == 1){
+        shutdown(waitsock, 2);
+        printf("Stopped waiting.\n");
+    }
+    if(client_mode == 2){
+        shutdown(chatsock, 2);
+        printf("Left conversation.\n");
+    }
+    printf("%s> ", my_id);
+    client_mode = 0; // reset mode to info
 }
 
-char my_id[MAX_ID_LEN];
 
 int RequstList(int sockserver);
 
@@ -18,6 +31,8 @@ int RequstConnect(int sockserver, const char* connect_id);
 int StartChat(int chatsock);
 
 void *recvThread(void *arg);
+
+ void *listenThread(void *arg);
 
 int RequstList(int sockserver){
     char command[10] = "/list";
@@ -42,24 +57,24 @@ int RequstList(int sockserver){
 
     // Start a char server
     // Create new listen socket
-    int chatsock = 0;
+    // int waitsock = 0;
     struct sockaddr_in  servaddr;
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
     servaddr.sin_port = 0;
     // Socket create
-    if( (chatsock = socket(AF_INET, SOCK_STREAM, 0)) == -1 ){
+    if( (waitsock = socket(AF_INET, SOCK_STREAM, 0)) == -1 ){
         printf("Create socket error: %s(errno: %d)\n",strerror(errno),errno);
         return -1;
     }
     //bind socket
-    if( bind(chatsock, (struct sockaddr*)&servaddr, sizeof(servaddr)) == -1){
+    if( bind(waitsock, (struct sockaddr*)&servaddr, sizeof(servaddr)) == -1){
         printf("Bind socket error: %s(errno: %d)\n",strerror(errno),errno);
         return -1;
     }
     //listenning
-    if( listen(chatsock, 10) == -1){
+    if( listen(waitsock, 10) == -1){
         printf("Listen socket error: %s(errno: %d)\n",strerror(errno),errno);
         return -1;
     }
@@ -67,7 +82,7 @@ int RequstList(int sockserver){
     // Get new port number
     struct sockaddr_in connAddr;
     socklen_t addrlen = sizeof(struct sockaddr_in);
-    if(getsockname(chatsock, (sockaddr*)&connAddr, &addrlen) != 0){
+    if(getsockname(waitsock, (sockaddr*)&connAddr, &addrlen) != 0){
         return -1;
     }
     int new_port = ntohs(connAddr.sin_port);
@@ -75,23 +90,28 @@ int RequstList(int sockserver){
     // Send new port to server
     char send_buffer[20];
     sprintf(send_buffer,"/wait %d",new_port);
-    printf("Send new port:%d\n", new_port);
+    // printf("Send new port:%d\n", new_port);
     if(send(sockserver, send_buffer, 20, 0) < 0){
         printf("send list request error: %s(errno: %d)\n", strerror(errno), errno);
         return -1;
     }
     int connfd = 0;
-    //Start waiting
-    while(1){
-        if((connfd = accept(chatsock, (struct sockaddr*)NULL, NULL)) == -1){
-            printf("Accept socket error: %s(errno: %d)",strerror(errno),errno);
-            continue;
-        }else{
-            if(StartChat(connfd) < 0){
-                printf("Chat error: %s(errno: %d)",strerror(errno),errno);
-            }
-        }
+    // waitsock = waitsock;
+
+    // Create new thread to listen
+    pthread_t thid;
+    struct ThreadAttri Attri;
+    struct ThreadAttri *ptAttri = &Attri;
+    
+    ptAttri->sockclient = waitsock;
+
+    client_mode = 1; // to wait state
+    if (pthread_create(&thid,NULL,listenThread,(void*)ptAttri) == -1){
+        printf("Thread create error!\n");
+        return -1;
     }
+
+
 
     return 1;
  }
@@ -118,7 +138,7 @@ int RequstConnect(int sockserver, const char* connect_id){
     char port[10];
     sscanf(recv_buffer, "%s %s", address, port);
 
-    int chatsock = 0;
+    // int chatsock = 0;
     struct sockaddr_in serv_addr; 
     // Create socket
     if ((chatsock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
@@ -150,43 +170,33 @@ int RequstConnect(int sockserver, const char* connect_id){
     return 1;
  }
 
-int StartChat(int chatsock){
+int StartChat(int connfd){
     // Create new thread to recv msg
     pthread_t thid;
     struct ThreadAttri Attri;
     struct ThreadAttri *ptAttri = &Attri;
     
-    ptAttri->sockclient = chatsock;
+    ptAttri->sockclient = connfd;
+
 
     if (pthread_create(&thid,NULL,recvThread,(void*)ptAttri) == -1){
         printf("Thread create error!\n");
         return -1;
     }
     //send id exchange with each other
-    if(send(chatsock, my_id, MAX_ID_LEN, 0) < 0){
+    if(send(connfd, my_id, MAX_ID_LEN, 0) < 0){
         printf("send my id error: %s(errno: %d)\n", strerror(errno), errno);
         return -1;
     }
-
-    // send msg
-    char cstrin[BUFFER_SIZE];
-    // string strin;
-    cout << '>';
-    while(cin.getline(cstrin, BUFFER_SIZE)){ //*bug may cut msg larger than buffer size
-        if(send(chatsock, cstrin, BUFFER_SIZE, 0) < 0){
-            printf("send my id error: %s(errno: %d)\n", strerror(errno), errno);
-            return -1;
-        }
-        memset(cstrin, 0, BUFFER_SIZE);
-        cout << '>';
-    }
+    client_mode = 2; //switch chat mode
     return 1;
  }
 
 void *recvThread(void *arg){
     struct ThreadAttri *temp;
     temp = (struct ThreadAttri *)arg;
-    int sockclient = temp->sockclient;
+    // int sockclient = temp->sockclient;
+    int sockclient = chatsock;
     char recv_buffer[BUFFER_SIZE];
     //recv chat id 
     char chat_id[MAX_ID_LEN];
@@ -195,17 +205,71 @@ void *recvThread(void *arg){
         pthread_exit((void*)-1);
     }
     printf("\nConnection from %s\n",chat_id);
-
+    printf("%s> ", my_id);
+    fflush(stdout);
+    memset(guest_id, 0, MAX_ID_LEN);
+    strcpy(guest_id,chat_id); 
     //recv msg
     while(recv(sockclient, recv_buffer, BUFFER_SIZE, 0) > 0){
         printf("\n%s: %s\n",chat_id, recv_buffer);
+        printf("%s> ", my_id);
+        fflush(stdout);
     }
+    printf("\nLeft conversation with %s\n",chat_id);
+    printf("%s> ", my_id);
+    fflush(stdout);
+    client_mode = 0;
+    pthread_exit((void*)1);
+ }
+
+ void *listenThread(void *arg){
+    struct ThreadAttri *temp;
+    temp = (struct ThreadAttri *)arg;
+    int sockclient = temp->sockclient;
+    char recv_buffer[BUFFER_SIZE];
+
+    struct timeval timeout={2,0};
+    fd_set  rset;
+    
+    // printf("selsect start!\n");
+    while(1){
+        FD_ZERO(&rset);
+        FD_SET(waitsock, &rset);
+        if(client_mode == 0){
+            char command[BUFFER_SIZE] = "/left";
+            if(send(serversock, command, BUFFER_SIZE, 0) < 0){
+                printf("send list request error: %s(errno: %d)\n", strerror(errno), errno);
+            }
+            //printf("%s> ", my_id);
+            fflush(stdout);
+            break;
+        }
+        int ret = select(waitsock + 1, &rset, NULL, NULL,&timeout); 
+        if(ret == 0){
+            // printf("timeout listen\n");
+            sleep(1);
+            continue;
+        }else if(ret > 0 && client_mode == 1){
+            FD_CLR(waitsock,&rset);
+            int connfd = accept(waitsock, (struct sockaddr*)NULL, NULL);
+            // printf("Selected!!!\n");
+            chatsock = connfd;
+            if(StartChat(chatsock) < 0){
+                printf("Chat error: %s(errno: %d)",strerror(errno),errno);
+            }
+            break;
+        }else if(ret < 0){
+            printf("selsect error\n");
+            pthread_exit((void*)-1);
+        }
+    }
+    // printf("selsect end\n");
     pthread_exit((void*)1);
  }
 
 int main(int argc, char const *argv[]) 
 { 
-    // signal(SIGINT, my_handler);
+    signal(SIGINT, my_handler);
     int sockserver = 0;
     struct sockaddr_in serv_addr; 
     char buffer[BUFFER_SIZE] = {0}; 
@@ -260,26 +324,30 @@ int main(int argc, char const *argv[])
     {
         printf("Send conection message error: %s(errno: %d)\n", strerror(errno), errno);
     }
+    serversock = sockserver;
     char cstrin[BUFFER_SIZE];
     // string strin;
-    cout << '>';
+    printf("%s> ", my_id);
     while(cin.getline(cstrin, BUFFER_SIZE)){
         //get the command
         string strin(cstrin);
         int spc_pos = 0;
         string connect_id = "";
-        if(strin[0] == '/'){ //is a command
+        if(strin == "/quit"){
+                break;
+        }
+        if(strin[0] == '/' && client_mode == 0){ //is a command and in info state
             if((spc_pos = strin.find(' ')) > 0){
                 connect_id = strin.substr(spc_pos + 1, strin.size() - spc_pos - 1);
                 strin = strin.substr(0, spc_pos);
             }
             if(strin =="/list"){
-                //list function TODO
+                //list function
                 printf("show list\n");
                 RequstList(sockserver);
             }else if(strin =="/wait"){
                 //wait function TODO
-                printf("waiting for connection\n");
+                printf("waiting for connection.\n");
                 if(RequstWait(sockserver) < 0){
                     printf("Wait error: %s(errno: %d)\n", strerror(errno), errno);
                 }
@@ -287,11 +355,15 @@ int main(int argc, char const *argv[])
                 //connect function TODO * need id
                 printf("connect to %s...\n", connect_id.c_str());
                 RequstConnect(sockserver, connect_id.c_str());
-            }else if(strin =="/quit"){
-                break;
+            }else{
+                printf("No such command!\n");
+            }
+        }else if(client_mode == 2){ //not command and in chat mode send message
+            if(send(chatsock, cstrin, BUFFER_SIZE, 0) < 0){
+                printf("send my id error: %s(errno: %d)\n", strerror(errno), errno);
             }
         }
-        cout << '>';
+        printf("%s> ", my_id);
         // clear strin
         strin = "";
     }
