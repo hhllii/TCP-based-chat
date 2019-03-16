@@ -11,13 +11,17 @@ volatile sig_atomic_t flag = 0;
 static void my_handler(int sig){ // can be called asynchronously
     if(client_mode == 1){
         shutdown(waitsock, 2);
-        printf("Stopped waiting.\n");
+        printf("\nStopped waiting.\n");
+        printf("%s> ", my_id);
+        fflush(stdout);
     }
     if(client_mode == 2){
         shutdown(chatsock, 2);
-        printf("Left conversation.\n");
+        printf("\nLeft conversation.\n");
+        printf("%s> ", my_id);
+        fflush(stdout);
     }
-    printf("%s> ", my_id);
+    
     client_mode = 0; // reset mode to info
 }
 
