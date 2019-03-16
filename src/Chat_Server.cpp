@@ -2,6 +2,18 @@
 
 vector<Client_Info> *client_list = new vector<Client_Info>();
 
+int SendClientList(int sockclient);
+
+int AddWaitList(Client_Info client_info, int sockclient, int new_port);
+
+int SendClientInfo(int sockclient, const char* connect_id);
+
+void RemoveFromWait(const char* client_id);
+
+int HandleClientRequest(int sockclient, Client_Info client_info);
+
+void *serverThread(void *arg);
+
 pthread_mutex_t clist_lock;
 
 int SendClientList(int sockclient){
